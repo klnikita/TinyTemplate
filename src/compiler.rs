@@ -298,7 +298,9 @@ impl<'template> TemplateCompiler<'template> {
     /// formatter name.
     fn consume_value(&mut self) -> Result<(Path<'template>, Option<&'template str>)> {
         let tag = self.consume_tag(self.block_tags.value_end)?;
-        let mut tag = tag[1..(tag.len() - 1)].trim();
+        let mut tag = tag
+            [self.block_tags.value_start.len()..(tag.len() - self.block_tags.value_end.len())]
+            .trim();
         if tag.starts_with('-') {
             tag = tag[1..].trim();
             self.trim_last_whitespace();
@@ -334,7 +336,9 @@ impl<'template> TemplateCompiler<'template> {
     /// and the rest of the text in the tag. Also handles trimming whitespace where needed.
     fn consume_block(&mut self) -> Result<(&'template str, &'template str)> {
         let tag = self.consume_tag(self.block_tags.block_end)?;
-        let mut block = tag[2..(tag.len() - 2)].trim();
+        let mut block = tag
+            [self.block_tags.block_start.len()..(tag.len() - self.block_tags.block_end.len())]
+            .trim();
         if block.starts_with('-') {
             block = block[1..].trim();
             self.trim_last_whitespace();
