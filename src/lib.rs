@@ -163,6 +163,15 @@ pub fn format_unescaped(value: &Value, output: &mut String) -> Result<()> {
     }
 }
 
+/// Permit to set custom value and block delimiter.
+#[derive(Copy, Clone)]
+pub struct BlockTags<'template> {
+    pub block_start: &'template str,
+    pub block_end: &'template str,
+    pub value_start: &'template str,
+    pub value_end: &'template str,
+}
+
 /// The TinyTemplate struct is the entry point for the TinyTemplate library. It contains the
 /// template and formatter registries and provides functions to render templates as well as to
 /// register templates and formatters.
@@ -170,15 +179,28 @@ pub struct TinyTemplate<'template> {
     templates: HashMap<&'template str, Template<'template>>,
     formatters: HashMap<&'template str, Box<ValueFormatter>>,
     default_formatter: &'template ValueFormatter,
+    block_tags: BlockTags<'template>,
 }
 impl<'template> TinyTemplate<'template> {
     /// Create a new TinyTemplate registry. The returned registry contains no templates, and has
     /// [`format_unescaped`](fn.format_unescaped.html) registered as a formatter named "unescaped".
     pub fn new() -> TinyTemplate<'template> {
+        let block_tags = BlockTags {
+            block_start: "{{",
+            block_end: "}}",
+            value_start: "{",
+            value_end: "}",
+        };
+        TinyTemplate::new_with_blocktags(block_tags)
+    }
+
+    /// Create a new TinyTemplate registry with custom.
+    pub fn new_with_blocktags(block_tags: BlockTags<'template>) -> TinyTemplate<'template> {
         let mut tt = TinyTemplate {
             templates: HashMap::default(),
             formatters: HashMap::default(),
             default_formatter: &format,
+            block_tags: block_tags,
         };
         tt.add_formatter("unescaped", format_unescaped);
         tt
@@ -186,7 +208,7 @@ impl<'template> TinyTemplate<'template> {
 
     /// Parse and compile the given template, then register it under the given name.
     pub fn add_template(&mut self, name: &'template str, text: &'template str) -> Result<()> {
-        let template = Template::compile(text)?;
+        let template = Template::compile(text, self.block_tags)?;
         self.templates.insert(name, template);
         Ok(())
     }
@@ -256,5 +278,25 @@ mod test {
 
         let rendered = tt.render("hello", &context).unwrap();
         assert_eq!(rendered, "Hello <World>!")
+    }
+
+    static TEMPLATE_TAGS: &'static str = "Hello [name]!";
+    #[test]
+    pub fn test_block_tags() {
+        let block_tags = BlockTags {
+            block_start: "[[",
+            block_end: "]]",
+            value_start: "[",
+            value_end: "]",
+        };
+        let mut tt = TinyTemplate::new_with_blocktags(block_tags);
+        tt.add_template("hello", TEMPLATE_TAGS).unwrap();
+
+        let context = Context {
+            name: "World".to_string(),
+        };
+
+        let rendered = tt.render("hello", &context).unwrap();
+        assert_eq!(rendered, "Hello World!")
     }
 }

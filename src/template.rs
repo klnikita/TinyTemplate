@@ -1,5 +1,6 @@
 //! This module implements the bytecode interpreter that actually renders the templates.
 
+use crate::BlockTags;
 use compiler::TemplateCompiler;
 use error::Error::*;
 use error::*;
@@ -117,11 +118,14 @@ pub(crate) struct Template<'template> {
 }
 impl<'template> Template<'template> {
     /// Create a Template from the given template string.
-    pub fn compile(text: &'template str) -> Result<Template> {
+    pub fn compile(
+        text: &'template str,
+        block_tags: BlockTags<'template>,
+    ) -> Result<Template<'template>> {
         Ok(Template {
             original_text: text,
             template_len: text.len(),
-            instructions: TemplateCompiler::new(text).compile()?,
+            instructions: TemplateCompiler::new(text, block_tags).compile()?,
         })
     }
 
@@ -349,10 +353,16 @@ mod test {
     use compiler::TemplateCompiler;
 
     fn compile(text: &'static str) -> Template<'static> {
+        let block_tags = BlockTags {
+            block_start: "{{",
+            block_end: "}}",
+            value_start: "{",
+            value_end: "}",
+        };
         Template {
             original_text: text,
             template_len: text.len(),
-            instructions: TemplateCompiler::new(text).compile().unwrap(),
+            instructions: TemplateCompiler::new(text, block_tags).compile().unwrap(),
         }
     }
 

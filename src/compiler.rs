@@ -1,5 +1,6 @@
 #![allow(deprecated)]
 
+use crate::BlockTags;
 /// The compiler module houses the code which parses and compiles templates. TinyTemplate implements
 /// a simple bytecode interpreter (see the [instruction] module for more details) to render templates.
 /// The [`TemplateCompiler`](struct.TemplateCompiler.html) struct is responsible for parsing the
@@ -35,16 +36,21 @@ pub(crate) struct TemplateCompiler<'template> {
     /// When we see a `{foo -}` or similar, we need to remember to left-trim the next text block we
     /// encounter.
     trim_next: bool,
+    block_tags: BlockTags<'template>,
 }
 impl<'template> TemplateCompiler<'template> {
     /// Create a new template compiler to parse and compile the given template.
-    pub fn new(text: &'template str) -> TemplateCompiler<'template> {
+    pub fn new(
+        text: &'template str,
+        block_tags: BlockTags<'template>,
+    ) -> TemplateCompiler<'template> {
         TemplateCompiler {
             original_text: text,
             remaining_text: text,
             instructions: vec![],
             block_stack: vec![],
             trim_next: false,
+            block_tags: block_tags,
         }
     }
 
@@ -65,7 +71,7 @@ impl<'template> TemplateCompiler<'template> {
                 }
             // Block tag. Block tags are wrapped in {{ }} and always have one word at the start
             // to identify which kind of tag it is. Depending on the tag type there may be more.
-            } else if self.remaining_text.starts_with("{{") {
+            } else if self.remaining_text.starts_with(self.block_tags.block_start) {
                 self.trim_next = false;
 
                 let (discriminant, rest) = self.consume_block()?;
@@ -140,7 +146,7 @@ impl<'template> TemplateCompiler<'template> {
             // Values, of the form { dotted.path.to.value.in.context }
             // Note that it is not (currently) possible to escape curly braces in the templates to
             // prevent them from being interpreted as values.
-            } else if self.remaining_text.starts_with('{') {
+            } else if self.remaining_text.starts_with(self.block_tags.value_start) {
                 self.trim_next = false;
 
                 let (path, name) = self.consume_value()?;
@@ -272,9 +278,13 @@ impl<'template> TemplateCompiler<'template> {
             self.remaining_text
         };
 
-        let mut position = search_substr
-            .find('{')
+        let position_val = search_substr
+            .find(self.block_tags.value_start)
             .unwrap_or_else(|| search_substr.len());
+        let position_block = search_substr
+            .find(self.block_tags.block_start)
+            .unwrap_or_else(|| search_substr.len());
+        let mut position = std::cmp::min(position_val, position_block);
         if escaped {
             position += 1;
         }
@@ -287,7 +297,7 @@ impl<'template> TemplateCompiler<'template> {
     /// Advance the cursor to the end of the value tag and return the value's path and optional
     /// formatter name.
     fn consume_value(&mut self) -> Result<(Path<'template>, Option<&'template str>)> {
-        let tag = self.consume_tag("}")?;
+        let tag = self.consume_tag(self.block_tags.value_end)?;
         let mut tag = tag[1..(tag.len() - 1)].trim();
         if tag.starts_with('-') {
             tag = tag[1..].trim();
@@ -323,7 +333,7 @@ impl<'template> TemplateCompiler<'template> {
     /// Advance the cursor to the end of the current block tag and return the discriminant substring
     /// and the rest of the text in the tag. Also handles trimming whitespace where needed.
     fn consume_block(&mut self) -> Result<(&'template str, &'template str)> {
-        let tag = self.consume_tag("}}")?;
+        let tag = self.consume_tag(self.block_tags.block_end)?;
         let mut block = tag[2..(tag.len() - 2)].trim();
         if block.starts_with('-') {
             block = block[1..].trim();
@@ -422,7 +432,13 @@ mod test {
     use instruction::Instruction::*;
 
     fn compile(text: &'static str) -> Result<Vec<Instruction<'static>>> {
-        TemplateCompiler::new(text).compile()
+        let block_tags = BlockTags {
+            block_start: "{{",
+            block_end: "}}",
+            value_start: "{",
+            value_end: "}",
+        };
+        TemplateCompiler::new(text, block_tags).compile()
     }
 
     #[test]
